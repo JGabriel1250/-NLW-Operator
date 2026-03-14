@@ -1,79 +1,166 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ClipMaker</title>
 </head>
+
 <body>
     <h1>ClipMaker</h1>
 
-    <button id="upload_widget" class="cloudinary-button">Upload files</button>
+    <input type="text" name="" id="apiKey" placeholder="Coloque aqui sua chave de API do GEMINI">
+    <button id="uploadWidget" class="cloudinary-button">Upload files</button>
+    <p id="status"></p>
+    <video id="video" src="" controls></video>
 
-    <script src="https://upload-widget.cloudinary.com/latest/global/all.js" type="text/javascript"></script> 
+    <script src="https://upload-widget.cloudinary.com/latest/global/all.js" type="text/javascript"></script>
 
-    <script type="text/javascript">  
+    <script type="text/javascript">
 
-    const config = {
-        cloudName: 'ddjtg9eiz', 
-        uploadPreset: 'upload_projeto'
-    }
+        const el = {
+            status: document.getElementById('status'),
+            video: document.getElementById('video'),
+            apiKey: document.getElementById('apiKey'),
+            button: document.getElementById('uploadWidget')
+        }
 
-    const app = {
-        trancriptionURL: '',
-        public_id: '',
-        waitForTranscription: async (videoInfo) => {
-            const maxAttemps = 30
-            const delay = 2000
+        const config = {
+            cloudName: 'ddjtg9eiz',
+            uploadPreset: 'upload_projeto'
+        }
 
-            for (let attemp = 1; attemp <= maxAttemps; attemp++) {
-                const url = `https://res.cloudinary.com/${config.cloudName}/video/upload/v${videoInfo.version}/${videoInfo.public_id}.${videoInfo.format}`
+        const app = {
+            trancriptionURL: '',
+            public_id: '',
+            waitForTranscription: async (videoInfo) => {
+                const maxAttemps = 30
+                const delay = 3000
 
-                try {
-                    console.log(`Tentativa ${attemp}/${maxAttemps}: Verificando transcrição...`)
-                    const response = await fetch(url)
+                for (let attemp = 1; attemp <= maxAttemps; attemp++) {
+                    const url = `https://res.cloudinary.com/${config.cloudName}/video/upload/v${videoInfo.version}/${videoInfo.public_id}.transcript`
 
-                    if (response.ok) {
-                        app.trancriptionURL = url
-                        console.log('Transcrição encontrada!', url)
-                        return true
-                    } 
-                } catch (error) {
-                    console.log(`Tentativa ${attemp} falhou:`, error.message)
+                    try {
+                        console.log(`Tentativa ${attemp}/${maxAttemps}: Verificando transcrição...`)
+                        const response = await fetch(url)
+
+                        if (response.ok) {
+                            app.trancriptionURL = url
+                            console.log('Transcrição encontrada!', url)
+                            return true
+                        }
+                    } catch (error) {
+                        console.log(`Tentativa ${attemp} falhou:`, error.message)
+                    }
+
+                    if (attemp < maxAttemps) {
+                        await new Promise(resolve => setTimeout(resolve, delay))
+                    }
                 }
 
-                if (attemp < maxAttemps) {
-                    await new Promise(resolve => setTimeout(resolve, delay))
+                console.log('Transcrição não encontrada após todas as tentativas')
+                return false
+            },
+            getTranscription: async () => {
+                const response = await fetch(app.trancriptionURL)
+                const text = await response.text()
+                console.log('Transcrição:', text)
+                return text
+            },
+            getViralMoment: async () => {
+                const transcription = await app.getTranscription()
+                const model = 'gemini-2.0-flash'
+                const endpointGemini = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+
+                const prompt = `
+            Role: You are a professional video editor specializing in viral content.
+Task: Analyze the transcription below and identify the most engaging, funny, or surprising segment.
+Constraints:
+1. Duration: Minimum 30 seconds, Maximum 60 seconds.
+2. Format: Return ONLY the start and end string for Cloudinary. Format: so_<start_seconds>,eo_<end_seconds>
+3. Examples: "so_10,eo_20" or "so_12.5,eo_45.2"
+4. CRITICAL: Do not use markdown, do not use quotes, do not explain. Return ONLY the raw string.
+
+Transcription:
+${transcription}`
+
+                const headers = {
+                    'x-goog-api-key': el.apiKey.value,
+                    'content-type': 'application/json'
+                }
+
+                const contents = [
+                    {
+                        parts: [
+                            {
+                                text: prompt
+                            }
+                        ]
+                    }
+                ]
+
+                const maxAttemps = 30
+                const delay = 3000
+
+                for (let attempt = 1; attempt <= maxAttemps; attempt++) {
+                    try {
+                        const response = await fetch(endpointGemini, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ contents })
+                        })
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`)
+                        }
+
+                        const data = await response.json()
+                        const rawText = data.candidates[0].content.parts[0].text.trim()
+                        return rawText.replace(/```/g, '').replace(/json/g, "").trim()
+                    } catch (error) {
+                        const isLastAttempt = attempt === maxAttemps
+                        console.log(`Tentativa ${attempt}/${maxAttemps} falhou: ${error.message}`)
+                        if (isLastAttempt) {
+                            throw error
+                        }
+                        await new Promise(resolve => setTimeout(resolve, delay))
+                    }
                 }
             }
-
-            console.log('Transcrição não encontrada após todas as tentativas')
-            return false
-        },
-        getTranscription: async () => {
-            const response = await fetch(app.trancriptionURL)
-            return response.text()
-        },
-        getViralMoment: async () => {
-            const transcription = await app.getTranscription()
         }
-    }
 
-    var myWidget = cloudinary.createUploadWidget(
-        config,
-        async (error, result) => { 
-            if (!error && result && result.event === "success") { 
-                console.log('Done! Here is the image info: ', result.info)
-                app.public_id = result.info.public_id
+        var myWidget = cloudinary.createUploadWidget(
+            config,
+            async (error, result) => {
+                if (!error && result && result.event === "success") {
+                    console.log('Done! Here is the image info: ', result.info)
+                    app.public_id = result.info.public_id
 
-                const isReady = await app.waitForTranscription(result.info)
+                    try {
+                        const isReady = await app.waitForTranscription(result.info)
+                        if (!isReady) {
+                            throw new Error('erro ao buscar transcrição')
+                        }
+
+                        const viralMoment = await app.getViralMoment()
+                        const viralMomentURL = `https://res.cloudinary.com/${config.cloudName}/video/upload/${viralMoment}/${app.public_id}.mp4`
+                        el.video.setAttribute('src', viralMomentURL)
+                    } catch (error) {
+                        console.log({ error })
+                    }
+                }
             }
-        }
-    )
+        )
 
-    document.getElementById("upload_widget").addEventListener("click", function(){
-        myWidget.open();
-    }, false);
+        el.button.addEventListener("click", function () {
+            if (!el.apiKey.value) {
+                alert('Por favor, insira sua API do Gemini primeiro.')
+                el.apiKey.focus()
+                return
+            }
+            myWidget.open();
+        }, false);
     </script>
 </body>
 </html>
