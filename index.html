@@ -19,11 +19,54 @@
         uploadPreset: 'upload_projeto'
     }
 
+    const app = {
+        trancriptionURL: '',
+        public_id: '',
+        waitForTranscription: async (videoInfo) => {
+            const maxAttemps = 30
+            const delay = 2000
+
+            for (let attemp = 1; attemp <= maxAttemps; attemp++) {
+                const url = `https://res.cloudinary.com/${config.cloudName}/video/upload/v${videoInfo.version}/${videoInfo.public_id}.${videoInfo.format}`
+
+                try {
+                    console.log(`Tentativa ${attemp}/${maxAttemps}: Verificando transcrição...`)
+                    const response = await fetch(url)
+
+                    if (response.ok) {
+                        app.trancriptionURL = url
+                        console.log('Transcrição encontrada!', url)
+                        return true
+                    } 
+                } catch (error) {
+                    console.log(`Tentativa ${attemp} falhou:`, error.message)
+                }
+
+                if (attemp < maxAttemps) {
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                }
+            }
+
+            console.log('Transcrição não encontrada após todas as tentativas')
+            return false
+        },
+        getTranscription: async () => {
+            const response = await fetch(app.trancriptionURL)
+            return response.text()
+        },
+        getViralMoment: async () => {
+            const transcription = await app.getTranscription()
+        }
+    }
+
     var myWidget = cloudinary.createUploadWidget(
         config,
-        (error, result) => { 
+        async (error, result) => { 
             if (!error && result && result.event === "success") { 
-                console.log('Done! Here is the image info: ', result.info); 
+                console.log('Done! Here is the image info: ', result.info)
+                app.public_id = result.info.public_id
+
+                const isReady = await app.waitForTranscription(result.info)
             }
         }
     )
