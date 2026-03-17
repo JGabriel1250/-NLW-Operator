@@ -4,6 +4,11 @@
 
 ---
 
+## 🌐 Acesse o Projeto
+
+O ClipMaker está disponível online: [Clique aqui para acessar](https://nlw-operator.vercel.app/)
+
+
 ## 📌 Sobre o Projeto
 
 O **ClipMaker** é uma aplicação web desenvolvida durante o evento gratuito de 3 dias da **Rocketseat** — trilha iniciante — com foco em integração de IA em projetos reais.
